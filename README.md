@@ -82,7 +82,7 @@ uhd_find_devices
 Expected output:
 ```bash
 -- UHD Device 0 --
-    serial: 32A0FD4
+    serial: XXXXXXX
     product: B200
     type: b200
 
