@@ -7,13 +7,13 @@ import time
 # ==========================================
 # 1. PARAMETERS
 # ==========================================
-CENTER_FREQ = 2402e6      # Hz (2.432 GHz)
-SAMPLE_RATE = 5e6         # Hz
+CENTER_FREQ = 2432e6      # Hz (2.432 GHz)
+SAMPLE_RATE = 10e6         # Hz
 GAIN        = 40          # dB
 
 DWELL_TIME  = 0.2        # Seconds
 
-STFT_NPERSEG = 256
+STFT_NPERSEG = 256     # Can take 1024 if the system has high RAM
 STFT_OVERLAP = 128     # generally 50%
 WINDOW_TYPE  = 'hann'
 
