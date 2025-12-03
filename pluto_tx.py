@@ -1,3 +1,5 @@
+# Make sure to attach the Antenna to the RX/TX slot
+
 import numpy as np
 import adi
 import time
@@ -147,4 +149,5 @@ def run_transmitter():
             sdr.tx_destroy_buffer()
 
 if __name__ == "__main__":
+
     run_transmitter()
