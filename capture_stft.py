@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from datetime import datetime
-from scipy.signal import windows  # Required for Blackman-Harris
+from scipy.signal import windows
 
 # ==========================================
 # 1. PARAMETERS
@@ -25,7 +25,7 @@ def setup_usrp(fc, fs, gain):
     usrp_dev.set_rx_bandwidth(fs, 0)
     
     # --- BUILT-IN HARDWARE CALIBRATION ---
-    # Enables the B210's internal Automatic DC Offset Compensation.
+    # Enables the B210's internal Automatic DC Offset Compensation. (Notch Filter)
     # Reference: UHD Manual on self calibration
     usrp_dev.set_rx_dc_offset(True, 0)
     
