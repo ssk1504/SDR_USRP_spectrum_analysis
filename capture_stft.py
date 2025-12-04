@@ -3,11 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from datetime import datetime
+from scipy.signal import windows  # Required for Blackman-Harris
 
 # ==========================================
 # 1. PARAMETERS
 # ==========================================
-SAVE_IQ_FILE   = "captured_iq.npy"
+SAVE_IQ_FILE    = "captured_iq.npy"
 
 # ==========================================
 # 2. USRP HARDWARE SETUP
@@ -23,6 +24,11 @@ def setup_usrp(fc, fs, gain):
     usrp_dev.set_rx_gain(gain, 0)
     usrp_dev.set_rx_bandwidth(fs, 0)
     
+    # --- BUILT-IN HARDWARE CALIBRATION ---
+    # Enables the B210's internal Automatic DC Offset Compensation.
+    # Reference: UHD Manual on self calibration
+    usrp_dev.set_rx_dc_offset(True, 0)
+    
     # Wait for LO to lock
     time.sleep(1)
     return usrp_dev
@@ -37,11 +43,8 @@ def capture_samples(usrp_dev, duration, fs):
     st_args = uhd.usrp.StreamArgs("fc32", "sc16")
     streamer = usrp_dev.get_rx_stream(st_args)
     
-    # Pre-allocate the full buffer (Complex Float32)
-    # 0.5s @ 20MHz = 10M samples = ~80MB RAM (Safe)
+    # Pre-allocate buffer
     full_data = np.zeros(num_samps, dtype=np.complex64)
-    
-    # Buffer for individual packet reads
     recv_buffer = np.zeros((1, 4096), dtype=np.complex64)
     metadata = uhd.types.RXMetadata()
 
@@ -61,7 +64,6 @@ def capture_samples(usrp_dev, duration, fs):
 
         if metadata.error_code != uhd.types.RXMetadataErrorCode.none:
             print(f"[ERROR] {metadata.strerror()}")
-            # Break if serious error to prevent infinite loop
             if metadata.error_code != uhd.types.RXMetadataErrorCode.overflow:
                 break
 
@@ -83,7 +85,6 @@ def capture_samples(usrp_dev, duration, fs):
 # 4. PLOT TIME-DOMAIN (Optimized)
 # ==========================================
 def plot_time_domain(iq_data, fs, label):
-    # Downsample for plotting to save memory (plot 1 out of every 100 samples)
     decimation_factor = 100 
     subset = iq_data[::decimation_factor]
     t = np.arange(len(subset)) * decimation_factor / fs
@@ -94,19 +95,27 @@ def plot_time_domain(iq_data, fs, label):
     plt.xlabel("Time (s)")
     plt.ylabel("Amplitude")
     plt.tight_layout()
-    print("[DISPLAY] Plotting Time Domain...")
     plt.show()
 
 # ==========================================
 # 5. EFFICIENT BLOCK PROCESSING STFT
 # ==========================================
-def compute_and_plot_block_stft(data, fs, fc, n_fft, label):
+def compute_and_plot_block_stft(data, fs, fc, label):
     print("[INFO] Starting Block-Based STFT Computation...")
     
-    # 50% Overlap
+    # --- REQUIREMENT: 25 kHz Resolution ---
+    # N_fft = fs / 25000
+    n_fft = int(fs / 25000)
+    
+    # --- REQUIREMENT: 50% Overlap ---
+    # Satisfies Constant Overlap-Add (COLA) constraint
     hop_length = n_fft // 2
     
-    # Calculate dimensions
+    # Sanity Check for Terminal
+    actual_res = fs / n_fft
+    print(f"[INFO] Dynamic FFT Size: {n_fft} bins")
+    print(f"[INFO] Frequency Resolution: {actual_res/1000:.2f} kHz (Target: 25.00 kHz)")
+    
     n_samples = len(data)
     n_frames = (n_samples - n_fft) // hop_length + 1
     
@@ -114,111 +123,99 @@ def compute_and_plot_block_stft(data, fs, fc, n_fft, label):
         print("[ERROR] Data too short for this STFT size.")
         return
 
-    # Window Function (Hanning)
-    window = np.hanning(n_fft)
+    # --- REQUIREMENT: Minimize Spectral Leakage ---
+    # Blackman-Harris Window (Side lobes < -92 dB)
+    window = windows.kaiser(n_fft, beta=14)
+    #window = windows.blackmanharris(n_fft)
     
-    # PRE-ALLOCATE OUTPUT MATRIX (Float32 to save RAM)
-    # Rows = Frequency Bins (n_fft), Cols = Time Steps (n_frames)
-    # We use fftshift structure, so rows = n_fft
     spectrogram_data = np.zeros((n_fft, n_frames), dtype=np.float32)
     
-    print(f"[INFO] Matrix Size: {n_fft} x {n_frames} (approx {n_fft * n_frames * 4 / 1024**2:.2f} MB)")
+    print(f"[INFO] Matrix Size: {n_fft} x {n_frames}")
 
     # --- BLOCK PROCESSING LOOP ---
     for i in range(n_frames):
         start = i * hop_length
         end = start + n_fft
         
-        # 1. Slice
         chunk = data[start:end]
-        
-        # 2. Window
         windowed = chunk * window
-        
-        # 3. FFT
         fft_res = np.fft.fft(windowed)
-        
-        # 4. Shift (so 0Hz is in center)
         fft_shifted = np.fft.fftshift(fft_res)
         
-        # 5. Magnitude & Log (dB) - Discard Phase IMMEDIATELY
-        # Adding 1e-12 to avoid log(0)
+        # Magnitude & Log (dB)
         mag_db = 20 * np.log10(np.abs(fft_shifted) + 1e-12)
-        
-        # 6. Store
         spectrogram_data[:, i] = mag_db
 
-    print("[INFO] Computation done. Saving and Plotting...")
+    print("[INFO] Computation done. Plotting...")
 
-    # OPTIONAL: Save compressed
-    timestamp = datetime.now().strftime("%H%M%S")
-    filename = f"stft_data_{label}_{timestamp}.npz"
-    np.savez_compressed(filename, stft_db=spectrogram_data, fs=fs, fc=fc)
-    print(f"[INFO] Saved to {filename}")
-
-    # PLOT USING IMSHOW (Efficient Bitmap)
-    # Extent defines the axes: [time_start, time_end, freq_start, freq_end]
+    # Plot
     duration = n_samples / fs
     freq_min = (fc - fs/2) / 1e6
     freq_max = (fc + fs/2) / 1e6
     
-    plt.figure(figsize=(10, 6))
-    
-    # 'aspect="auto"' allows the pixels to stretch to fill the window
-    # 'origin="lower"' puts low frequencies at bottom (standard for spectrograms)
+    plt.figure(figsize=(12, 7))
     plt.imshow(spectrogram_data, 
                aspect='auto', 
                origin='lower', 
                extent=[0, duration, freq_min, freq_max],
                cmap='inferno',
-               interpolation='nearest') # 'nearest' is fastest
+               interpolation='nearest')
 
     plt.colorbar(label='Power (dB)')
-    plt.title(f"Spectrogram | Fc={fc/1e6} MHz | BW={fs/1e6} MHz")
+    plt.title(f"Spectrogram | Fc={fc/1e6} MHz | BW={fs/1e6} MHz | Res={actual_res/1000:.2f} kHz")
     plt.xlabel("Time (s)")
     plt.ylabel("Frequency (MHz)")
-    
-    print("[DISPLAY] Plotting Spectrogram... Close window to continue.")
     plt.show()
 
 # ==========================================
 # WRAPPER & MAIN
 # ==========================================
-def run_experiment(usrp_dev, fc, bw, dwell, stft_n, label):
+def run_experiment(usrp_dev, fc, bw, dwell, label):
     print(f"\n[TASK] Starting Experiment: {label}")
     
-    # 1. Re-configure USRP
+    # --- LO OFFSET ---
+    # Keeps the physical LO 6-15 MHz away from our band of interest.
+    lo_offset = 15e6
+    tune_req = uhd.types.TuneRequest(fc, lo_offset)
+
     usrp_dev.set_rx_rate(bw, 0)
-    usrp_dev.set_rx_freq(uhd.types.TuneRequest(fc), 0)
+    usrp_dev.set_rx_freq(tune_req, 0)
     usrp_dev.set_rx_bandwidth(bw, 0)
-    time.sleep(1.0) # Let LO settle
+    time.sleep(1.0) 
     
-    # 2. Capture
+    # 1. Capture
     iq_data = capture_samples(usrp_dev, dwell, bw)
     
-    # 3. Plot Time Domain
+    # --- STRATEGY 3: CUSTOM SOFTWARE DSP BLOCK (COMMENTED OUT) ---
+    # Calculates the mean (DC component) and subtracts it.
+    # Reference: Manual Pg 3-4 (Additive Error Model)
+    dc_value = np.mean(iq_data)
+    iq_data = iq_data - dc_value
+    print(f"[DSP] Custom Software DC Removal Applied. Estimated Bias: {dc_value:.4f}")
+    
+    # 2. Plot Time Domain
     plot_time_domain(iq_data, bw, label)
     
-    # 4. Process STFT (Block Method)
-    compute_and_plot_block_stft(iq_data, bw, fc, stft_n, label)
+    # 3. STFT
+    compute_and_plot_block_stft(iq_data, bw, fc, label)
 
 if __name__ == "__main__":
     try:
-        # Initial Safe Defaults
-        usrp = setup_usrp(2400e6, 5e6, 40)
+        # Default to Bluetooth Center Channel (2440 MHz) and High BW (20 MHz)
+        usrp = setup_usrp(2440e6, 20e6, 30)
         
         print("\n" + "="*40)
-        print("  OPTIMIZED USRP SPECTROGRAM VIEWER")
+        print("  OPTIMIZED USRP VIEWER (Triple DC-Removal Mode)")
         print("="*40)
         
         while True:
             print("\n--- NEW RUN SETUP ---")
             try:
-                raw_fc = float(input("Enter Center Freq in GHz (e.g. 2.432) or 0 to STOP: "))
+                raw_fc = float(input("Enter Center Freq in GHz (e.g. 2.440) or 0 to STOP: "))
                 if raw_fc == 0: break
-                raw_bw = float(input("Enter Bandwidth in MHz (e.g. 10): "))
-                dwell = float(input("Enter Dwell Time in seconds (e.g. 0.5): "))
-                stft_n = int(input("Enter STFT Size (e.g. 512): "))
+                raw_bw = float(input("Enter Bandwidth in MHz (e.g. 5): "))
+                dwell = float(input("Enter Dwell Time in seconds (e.g. 0.1): "))
+                
             except ValueError:
                 print("Invalid input.")
                 continue
@@ -227,7 +224,7 @@ if __name__ == "__main__":
             bw = raw_bw * 1e6
             label = f"Exp_{raw_fc}GHz"
             
-            run_experiment(usrp, fc, bw, dwell, stft_n, label)
+            run_experiment(usrp, fc, bw, dwell, label)
             
     except KeyboardInterrupt:
         print("\nInterrupted.")
