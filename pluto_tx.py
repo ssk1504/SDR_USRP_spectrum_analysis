@@ -11,19 +11,19 @@ import random
 SDR_IP = "ip:192.168.2.1" # Address of the Pluto
 
 # CHOOSE YOUR MODE HERE:
-# "WIFI"      -> Simulates periodic Beacon Frames (Broadband bursts)
-# "BLUETOOTH" -> Simulates Frequency Hopping (Narrowband hops)
+# "WIFI"      
+# "BLUETOOTH" 
 MODE = "WIFI" 
 
 # Common Parameters
-SAMPLE_RATE = 4e6         # 4 MSPS (Safe for USB 2.0 limit)
+SAMPLE_RATE = 4e6         # 4 MSPS (Safe for USB 2.0)
 TX_GAIN     = -20         # dB (Range: 0 to -89). -20 is moderate power. 
                           # WARNING: Do not set to 0 if antennas are close!
 
 # ------------------------------------------
 # Mode A: Wi-Fi Beacon Configuration
 # ------------------------------------------
-WIFI_CENTER_FREQ = 2432e6 # Hz (Matches your USRP Rx)
+WIFI_CENTER_FREQ = 2432e6 # Hz 
 WIFI_INTERVAL    = 0.1024 # Seconds (Standard 102.4 ms beacon interval)
 WIFI_BURST_LEN   = 0.002  # Seconds (2ms burst duration)
 
@@ -33,7 +33,7 @@ WIFI_BURST_LEN   = 0.002  # Seconds (2ms burst duration)
 # Bluetooth range is 2402-2480 MHz.
 # We will hop randomly within this list.
 BT_FREQ_LIST = [2402e6, 2410e6, 2420e6, 2432e6, 2440e6, 2450e6, 2460e6, 2480e6]
-HOP_DWELL_TIME = 0.05     # Seconds per hop (Fast enough to look cool, slow enough for Python)
+HOP_DWELL_TIME = 0.05     # Seconds per hop
 
 # ==========================================
 # 2. SIGNAL GENERATION FUNCTIONS
@@ -151,3 +151,4 @@ def run_transmitter():
 if __name__ == "__main__":
 
     run_transmitter()
+
