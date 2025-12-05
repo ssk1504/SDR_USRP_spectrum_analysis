@@ -174,8 +174,7 @@ def run_experiment(usrp_dev, fc, bw, dwell, label):
     print(f"\n[TASK] Starting Experiment: {label}")
     
     # --- LO OFFSET ---
-    # Keeps the physical LO 6-15 MHz away from our band of interest.
-    lo_offset = 15e6
+    lo_offset = 6e6
     tune_req = uhd.types.TuneRequest(fc, lo_offset)
 
     usrp_dev.set_rx_rate(bw, 0)
@@ -186,12 +185,12 @@ def run_experiment(usrp_dev, fc, bw, dwell, label):
     # 1. Capture
     iq_data = capture_samples(usrp_dev, dwell, bw)
     
-    # --- STRATEGY 3: CUSTOM SOFTWARE DSP BLOCK (COMMENTED OUT) ---
+    # --- CUSTOM SOFTWARE DSP BLOCK ---
     # Calculates the mean (DC component) and subtracts it.
-    # Reference: Manual Pg 3-4 (Additive Error Model)
+    # Reference: Manual (Additive Error Model)
     dc_value = np.mean(iq_data)
     iq_data = iq_data - dc_value
-    print(f"[DSP] Custom Software DC Removal Applied. Estimated Bias: {dc_value:.4f}")
+    #print(f"[DSP] Custom Software DC Removal Applied. Estimated Bias: {dc_value:.4f}")
     
     # 2. Plot Time Domain
     plot_time_domain(iq_data, bw, label)
@@ -202,7 +201,8 @@ def run_experiment(usrp_dev, fc, bw, dwell, label):
 if __name__ == "__main__":
     try:
         # Default to Bluetooth Center Channel (2440 MHz) and High BW (20 MHz)
-        usrp = setup_usrp(2440e6, 20e6, 30)
+        #Increase the gain if you observe hogh noise in the received signal. If it is too bright, reduce it
+        usrp = setup_usrp(2440e6, 20e6, 50)
         
         print("\n" + "="*40)
         print("  OPTIMIZED USRP VIEWER (Triple DC-Removal Mode)")
