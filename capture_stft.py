@@ -124,7 +124,6 @@ def compute_and_plot_block_stft(data, fs, fc, label):
         return
 
     # --- REQUIREMENT: Minimize Spectral Leakage ---
-    # Blackman-Harris Window (Side lobes < -92 dB)
     window = windows.kaiser(n_fft, beta=14)
     #window = windows.blackmanharris(n_fft)
     
@@ -201,11 +200,11 @@ def run_experiment(usrp_dev, fc, bw, dwell, label):
 if __name__ == "__main__":
     try:
         # Default to Bluetooth Center Channel (2440 MHz) and High BW (20 MHz)
-        #Increase the gain if you observe hogh noise in the received signal. If it is too bright, reduce it
+        #Increase the gain if you observe hogh noise in the received signal. By default it is 50
         usrp = setup_usrp(2440e6, 20e6, 50)
         
         print("\n" + "="*40)
-        print("  OPTIMIZED USRP VIEWER (Triple DC-Removal Mode)")
+        print("  OPTIMIZED USRP VIEWER")
         print("="*40)
         
         while True:
